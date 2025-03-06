@@ -1,0 +1,20 @@
+#volumes:
+#    ocserv-data: {}
+services:
+  openconnect:
+    env_file:
+      - oc.env
+    image: eukhlg/openconnect:dev
+    restart: unless-stopped
+    container_name: openconnect
+    hostname: openconnect
+    devices:
+      - /dev/vhost-net:/dev/vhost-net
+    volumes:
+      - ./certs:/etc/openconnect/certs
+    #sysctls:
+    #  - net.ipv4.ip_forward=1
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges
