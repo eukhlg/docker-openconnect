@@ -26,50 +26,45 @@ USER_CERT=${USER_CERT:-"certs/client.pem"}
 USER_PKEY=${USER_PKEY:-"certs/key.pem"}
 CA_CERT=${CA_CERT:-"certs/ca.pem"}
 SERVER_CERT=${SERVER_CERT:-"certs/server.pem"}
-#SERVER_CERT=${SERVER_CERT:-"pin-sha256:oNWTJ7zzFWOJXeMi87fGFYJyvmwUoI4knRM2NHZMDJc="}
-
 }
 
 generate_server_cert_pin() {
-  #SERVER_CERT_PIN="pin-sha256:$(openssl x509 -in ${SERVER_CERT} -pubkey -noout \
-  #| openssl pkey -pubin -outform der \
-  #| openssl dgst -sha256 -binary \
-  #| base64)"
-  SERVER_CERT_PIN="pin-sha256:$(certtool --to-fingerprint --hash sha256 --infile ${SERVER_CERT} \
-  | sed 's/^SHA256 Fingerprint:[ \t]*//' \
-  | tr -d ':' \
-  | xxd -r -p \
-  | base64)"
+if [ ! -z ${SERVER_CERT} ]; then 
+SERVER_CERT_PIN="pin-sha256:$(openssl x509 -in ${SERVER_CERT} -pubkey -noout \
+| openssl pkey -pubin -outform der \
+| openssl dgst -sha256 -binary \
+| base64)"
+# If using certtool
+#SERVER_CERT_PIN="pin-sha256:$(certtool --to-fingerprint --hash sha256 --infile ${SERVER_CERT} \
+#| sed 's/^SHA256 Fingerprint:[ \t]*//' \
+#| tr -d ':' \
+#| xxd -r -p \
+#| base64)"
+fi
 }
 
 update_config() {
 
  # Setup configuration
-  
-    # Do we really need it with docker?
-    # -e "s/\(^tcp-port = \)[0-9]\+/\1${TCP_PORT}/" \
-    # -e "s/\(^udp-port = \)[0-9]\+/\1${UDP_PORT}/" \
-
-    # Settings for ocserv user
-    # -e "s/\(^run-as-group = \).*/\1ocserv/" \
-    # -e "s/\(^socket-file = \).*/\1\/var\/run\/ocserv\/ocserv-socket/" \
-    # -e "s|^#\(servercert=\).*|\1${SERVER_CERT_PIN}|" \
-
+  { 
     sed -e "s/^#\(server=\).*/\1https:\/\/${SERVER}/" \
         -e "s/^#\(protocol=\).*/\1${PROTOCOL}/" \
         -e "s/^#\(interface=\).*/\1${INTERFACE}/" \
         -e "s/^#\(user=\).*/\1${USER_NAME}/" \
         -e "s|^#\(cafile=\).*|\1${CA_CERT}|" \
-        -e "s/^#(no-system-trust)/\1$/" \
-        -e "s/^#(passwd-on-stdin)/\1$/" \
-        -e "/^[[:space:]]*#/d; /^[[:space:]]*$/d" \
-        /tmp/openconnect-default.conf > ./openconnect.conf
-    if [ -f ./certs/client.pem ] && [ -f ./certs/key.pem  ]; then
+        -e "s/^#\(no-system-trust\)/\1/" \
+        -e "s/^#\(passwd-on-stdin\)/\1/" \
+        /tmp/openconnect-default.conf 
+    if [ -f ${USER_CERT} ] && [ -f ${USER_PKEY} ]; then
       sed -e "s|^#\(certificate=\).*|\1${USER_CERT}|" \
           -e "s|^#\(sslkey=\).*|\1${USER_PKEY}|" \
-          -e "/^[[:space:]]*#/d; /^[[:space:]]*$/d" \
-          /tmp/openconnect-default.conf >> ./openconnect.conf
+          /tmp/openconnect-default.conf
     fi
+    if [ ! -z ${SERVER_CERT_PIN} ]; then
+      sed -e "s|^#\(servercert=\).*|\1${SERVER_CERT_PIN}|" \
+          /tmp/openconnect-default.conf 
+    fi 
+  } | sed -e "/^[[:space:]]*#/d; /^[[:space:]]*$/d" > ./openconnect.conf
 }
 
 # Main Execution

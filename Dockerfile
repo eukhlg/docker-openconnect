@@ -51,10 +51,10 @@ COPY --chmod=755 openconnect_pwd.sh /usr/local/sbin/openconnect_pwd
 #    | awk -F'[{}]' '{print $2}' | sort -u)" \
 #&& apk add --no-cache ${runDeps} lynx curl \
 
-# lynx curl openssl libxml2 libp11 p11-kit libproxy libtasn1 \
+# lynx curl gnutls libxml2 libp11 p11-kit libproxy libtasn1 \
 
 RUN apk add --no-cache \
-	curl gnutls libxml2 libproxy \
+	curl openssl libxml2 libproxy \
 	&& mkdir -p /etc/openconnect/certs /etc/vpnc /var/run/openconnect \
 	&& curl -SL --connect-timeout 8 --max-time 120 --retry 128 --retry-delay 5 \
 	"https://gitlab.com/openconnect/vpnc-scripts/raw/master/vpnc-script" -o /etc/vpnc/vpnc-script \
