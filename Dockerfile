@@ -1,17 +1,29 @@
 # Build Stage
-FROM alpine:3.21.0 AS builder
+ARG BASE_VERSION=3.21.0
 
+
+FROM alpine:${BASE_VERSION} AS builder
 ARG OPENCONNECT_VERSION=9.12
 
-		#p11-kit libp11 libproxy \
-		#libtasn1 gettext \
-		# gnutls-dev \
 RUN apk add --no-cache \
+		autoconf \
+		automake \
+		curl \
+		g++ \
+		gettext \
+		gnutls-dev \
+		libp11 \
+		libproxy \
+		libtasn1 \
 		libxml2-dev \
+		linux-headers \
+		lynx \
+		make \
+		p11-kit \
+		pkgconf \
+		tar \
+		xz \
 		zlib \
-		openssl-dev \
-		automake autoconf pkgconf \
-		curl g++ linux-headers make tar xz gettext lynx \
 	&& mkdir -p /usr/src/openconnect \
 	&& curl -SL --connect-timeout 8 --max-time 120 --retry 128 --retry-delay 5 \
 	"https://www.infradead.org/openconnect/download/openconnect-${OPENCONNECT_VERSION}.tar.gz" -o openconnect.tar.xz \
@@ -26,35 +38,29 @@ RUN apk add --no-cache \
 	| sed -E '/^$/ { N; s/\n(#[[:space:]]-[a-zA-Z],--|#[[:space:]]--)/\n#/; }' > /tmp/openconnect-default.conf
 
 # Runtime Stage
-FROM alpine:3.20.3
+FROM alpine:${BASE_VERSION}
+
+# Set environment variables
+ENV WORKDIR="/etc/openconnect"
+ENV CONFIG_FILE="${WORKDIR}/openconnect.conf"
+ENV DEFAULT_CONFIG_FILE="/tmp/openconnect-default.conf"
 
 # Copy compiled binary from builder stage
 COPY --from=builder /usr/local/sbin/ /usr/local/sbin/
 COPY --from=builder /usr/local/lib/*openconnect.so* /usr/local/lib/
-COPY --from=builder /tmp/openconnect-default.conf /tmp/openconnect-default.conf
-COPY --chmod=755 openconnect_pwd.sh /usr/local/sbin/openconnect_pwd
+COPY --from=builder /tmp/openconnect-default.conf "${DEFAULT_CONFIG_FILE}"
 
-# Captures options section of HTML Manual, normalizes it an comments all strings
-#lynx -dump -nolist https://www.infradead.org/openconnect/manual.html \
-#| awk '/^OPTIONS$/ {flag=1; next} /^SIGNALS$/ {flag=0} flag { $1=$1; print ($0 == "" ? "" : "# " $0) }'
-
-# Improoved version which also removes -- in front of each parameter
-#lynx -dump -nolist https://www.infradead.org/openconnect/manual.html \
-#| awk '/^OPTIONS$/ {flag=1; next} /^SIGNALS$/ {flag=0} flag { $1=$1; print ($0 == "" ? "" : "# " $0) }' \
-#| sed -E '/^$/ { N; s/\n(#[[:space:]]-[a-zA-Z],--|#[[:space:]]--)/\n#/; }'
-
-
-#&& runDeps="$(apk list | grep "$(scanelf --needed --nobanner /usr/local/bin/openconnect \
-#    | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
-#    | xargs -r -n1 -I{} sh -c 'apk info "{}" | head -n1 \
-#    | sed "s/ description:.*//"')" \
-#    | awk -F'[{}]' '{print $2}' | sort -u)" \
-#&& apk add --no-cache ${runDeps} lynx curl \
-
-# lynx curl gnutls libxml2 libp11 p11-kit libproxy libtasn1 \
-
+# Add dependencies
 RUN apk add --no-cache \
-	curl openssl libxml2 libproxy \
+	curl \
+	gnutls \
+	gnutls-utils \
+	libp11 \
+	libproxy \
+	libtasn1 \
+	libxml2 \
+	p11-kit \
+	zlib \
 	&& mkdir -p /etc/openconnect/certs /etc/vpnc /var/run/openconnect \
 	&& curl -SL --connect-timeout 8 --max-time 120 --retry 128 --retry-delay 5 \
 	"https://gitlab.com/openconnect/vpnc-scripts/raw/master/vpnc-script" -o /etc/vpnc/vpnc-script \
@@ -65,11 +71,10 @@ RUN addgroup -S openconnect \
     && adduser -S openconnect -G openconnect \
     && chown -R openconnect:openconnect /var/run/openconnect
 
-WORKDIR /etc/openconnect
+WORKDIR ${WORKDIR}
 
 COPY --chmod=755 docker-entrypoint.sh /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 
-#EXPOSE 443
-CMD ["openconnect_pwd", "--config", "/etc/openconnect/openconnect.conf"]
+CMD ["/bin/sh", "-c", "echo \"${USER_PASSWORD}\" | openconnect --non-inter --passwd-on-stdin --config \"${CONFIG_FILE}\""]

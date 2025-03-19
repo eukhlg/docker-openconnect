@@ -1,70 +1,94 @@
 #!/bin/sh
 set -e  # Exit on error
 
-# Example from OpenWRT
-# /usr/sbin/openconnect /
-# bigcorp.com /
-# -i vpn-oc0 /
-# --non-inter /
-# --syslog 
-# --script /lib/netifd/vpnc-script /
-# -c /etc/openconnect/user-cert-vpn-oc0.pem /
-# --sslkey /etc/openconnect/user-key-vpn-oc0.pem /
-# --cafile /etc/openconnect/ca-vpn-oc0.pem /
-# --no-system-trust /
-# --protocol anyconnect
+check_file_existence() {
 
-set_defaults() {
-SERVER=${SERVER:-"vpn.bigcorp.com"}
-PROTOCOL=${PROTOCOL:-"anyconnect"}
-INTERFACE=${INTERFACE:-"oc0"}
-#NON_INTER=${NON_INTER:-true}
-#SYSLOG=${SYSLOG:-true}
-USER_NAME=${USER_NAME:-"test"}
-USER_PASSWORD=${USER_PASSWORD:-"test"}
-USER_CERT=${USER_CERT:-"certs/client.pem"}
-USER_PKEY=${USER_PKEY:-"certs/key.pem"}
-CA_CERT=${CA_CERT:-"certs/ca.pem"}
-SERVER_CERT=${SERVER_CERT:-"certs/server.pem"}
+  local FILE_PATH="$1"
+
+  if [ -f "${FILE_PATH}" ]; then
+    echo "${FILE_PATH}"
+  else
+    echo ""
+  fi
 }
 
 generate_server_cert_pin() {
-if [ ! -z ${SERVER_CERT} ]; then 
-SERVER_CERT_PIN="pin-sha256:$(openssl x509 -in ${SERVER_CERT} -pubkey -noout \
-| openssl pkey -pubin -outform der \
-| openssl dgst -sha256 -binary \
-| base64)"
-# If using certtool
-#SERVER_CERT_PIN="pin-sha256:$(certtool --to-fingerprint --hash sha256 --infile ${SERVER_CERT} \
-#| sed 's/^SHA256 Fingerprint:[ \t]*//' \
-#| tr -d ':' \
-#| xxd -r -p \
-#| base64)"
+
+  local SERVER_CERT_FILE="$1"
+
+if [ -n "${SERVER_CERT_FILE}" ]; then
+
+    echo "pin-sha256:$(certtool --pubkey-info --infile "${SERVER_CERT_FILE}" --outder \
+    | sha256sum \
+    | awk '{print $1}' \
+    | xxd -r -p \
+    | base64)"
 fi
+
 }
+
+set_defaults() {
+#BASE_MTU=${BASE_MTU:-1300}
+#CA_CERT=$(check_file_existence "${CA_CERT:-certs/ca.pem}")
+#DTLS_CHIPHERS=${DTLS_CHIPHERS:-"NONE:+VERS-DTLS1.2:+COMP-NULL:+AES-256-CBC:+SIGN-RSA-SHA1:+SHA1:+RSA"}
+#DTLS_LOCAL_PORT=${DTLS_LOCAL_PORT:-8443}
+INTERFACE=${INTERFACE:-"ocon0"}
+NO_SYSTEM_TRUST=${NO_SYSTEM_TRUST:-true}
+#PROTOCOL=${PROTOCOL:-"anyconnect"}
+#SERVER=${SERVER:-"vpn.bigcorp.com"}
+#SERVER_CERT=$(check_file_existence "${SERVER_CERT:-certs/server.pem}")
+SERVER_CERT_PIN=$(generate_server_cert_pin "${SERVER_CERT}")
+#USER_CERT=$(check_file_existence "${USER_CERT:-certs/client.pem}")
+#USER_NAME=${USER_NAME:-"test"}
+#USER_PASSWORD=${USER_PASSWORD:-"test"}
+#USER_PKEY=$(check_file_existence "${USER_PKEY:-certs/key.pem}")
+#VERBOSE=${VERBOSE:-FALSE}
+}
+
+update_config_option() {
+    local OPTION="$1"
+    local VALUE="$2"
+    local LOWER_VALUE=$(echo "${VALUE}" | tr '[:upper:]' '[:lower:]')
+
+    # Process the config file
+    {
+        if [ "${LOWER_VALUE}" = "true" ]; then
+            # Case 1: Uncomment the option if it exists as a commented line
+            sed -E "s|^\s*#\s*(${OPTION}\b)|\1|" "${DEFAULT_CONFIG_FILE}"
+        elif [ "${LOWER_VALUE}" != "false" ] && [ -n "${VALUE}" ]; then
+            # Case 2: Update or add the option with the provided value
+            if grep -qE "^\s*#\s*${OPTION}\s*=" "${DEFAULT_CONFIG_FILE}"; then
+                # Case 2a: Uncomment and update the existing commented option
+                sed -E "s|^\s*#\s*(${OPTION}\s*=).*|\1${VALUE}|" "${DEFAULT_CONFIG_FILE}"
+            elif grep -qE "^\s*${OPTION}\s*=" "${DEFAULT_CONFIG_FILE}"; then
+                # Case 2b: Update the existing uncommented option
+                sed -E "s|^\s*(${OPTION}\s*=).*|\1${VALUE}|" "${DEFAULT_CONFIG_FILE}"
+            else
+                # Case 2c: Append the option if it doesn't exist
+                echo "${OPTION}=${VALUE}"
+            fi
+        fi
+    } | sed -e "/^\s*#/d; /^\s*$/d" >> "${CONFIG_FILE}"
+}
+
 
 update_config() {
 
  # Setup configuration
-  { 
-    sed -e "s/^#\(server=\).*/\1https:\/\/${SERVER}/" \
-        -e "s/^#\(protocol=\).*/\1${PROTOCOL}/" \
-        -e "s/^#\(interface=\).*/\1${INTERFACE}/" \
-        -e "s/^#\(user=\).*/\1${USER_NAME}/" \
-        -e "s|^#\(cafile=\).*|\1${CA_CERT}|" \
-        -e "s/^#\(no-system-trust\)/\1/" \
-        -e "s/^#\(passwd-on-stdin\)/\1/" \
-        /tmp/openconnect-default.conf 
-    if [ -f ${USER_CERT} ] && [ -f ${USER_PKEY} ]; then
-      sed -e "s|^#\(certificate=\).*|\1${USER_CERT}|" \
-          -e "s|^#\(sslkey=\).*|\1${USER_PKEY}|" \
-          /tmp/openconnect-default.conf
-    fi
-    if [ ! -z ${SERVER_CERT_PIN} ]; then
-      sed -e "s|^#\(servercert=\).*|\1${SERVER_CERT_PIN}|" \
-          /tmp/openconnect-default.conf 
-    fi 
-  } | sed -e "/^[[:space:]]*#/d; /^[[:space:]]*$/d" > ./openconnect.conf
+  update_config_option "base-mtu" "${BASE_MTU}"
+  update_config_option "cafile" "${CA_CERT}"
+  update_config_option "dtls-ciphers" "${DTLS_CHIPHERS}"
+  update_config_option "dtls-local-port" "${DTLS_LOCAL_PORT}"
+  update_config_option "interface" "${INTERFACE}"
+  update_config_option "no-system-trust" "${NO_SYSTEM_TRUST}"
+  update_config_option "protocol" "${PROTOCOL}"
+  update_config_option "server" "https://${SERVER}"
+  update_config_option "servercert" "${SERVER_CERT_PIN}"
+  update_config_option "certificate" "${USER_CERT}"
+  update_config_option "user" "${USER_NAME}"
+  update_config_option "sslkey" "${USER_PKEY}"
+  update_config_option "verbose" "${VERBOSE}"
+
 }
 
 # Main Execution

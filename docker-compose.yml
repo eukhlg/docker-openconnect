@@ -3,8 +3,8 @@
 services:
   openconnect:
     env_file:
-      - oc.env
-    image: eukhlg/openconnect:dev
+      - openconnect.env
+    image: eukhlg/openconnect:0.1.0
     restart: unless-stopped
     container_name: openconnect
     hostname: openconnect
@@ -12,8 +12,6 @@ services:
       - /dev/vhost-net:/dev/vhost-net
     volumes:
       - ./certs:/etc/openconnect/certs
-    #sysctls:
-    #  - net.ipv4.ip_forward=1
     cap_add:
       - NET_ADMIN
     security_opt:
