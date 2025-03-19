@@ -15,7 +15,7 @@ docker run \
   --device /dev/vhost-net:/dev/vhost-net \
   --cap-add NET_ADMIN \
   --rm \
-  eukhlg/openconnect:dev
+  eukhlg/openconnect:0.1.0
   ```
 Connect to a server with a certificate:
 
@@ -30,5 +30,5 @@ docker run \
   --cap-add NET_ADMIN \
   --volume ./certs:/etc/openconnect/certs \
   --rm \
-  eukhlg/openconnect:dev
+  eukhlg/openconnect:0.1.0
   ```
